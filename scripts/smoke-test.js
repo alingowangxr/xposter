@@ -4,7 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const readText = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const readText = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8").replace(/\r\n/g, "\n");
 const readJson = (relativePath) =>
   JSON.parse(readText(relativePath));
 
@@ -1429,7 +1429,7 @@ assert.ok(
   readme.includes("https://chromewebstore.google.com/detail/xposter/iimkimodgdjnnmdopeolboakhjmhfbbj"),
   "English README should recommend the Chrome Web Store listing"
 );
-assert.ok(readmeZh.includes("Chrome Web Store"), "Chinese README should mention Chrome Web Store");
+assert.ok(readmeZh.includes("Chrome 应用商店"), "Chinese README should mention Chrome Web Store");
 assert.ok(usageZh.includes("添加至 Chrome"), "Chinese usage guide should explain store installation");
 assert.ok(readmeZh.includes("https://x.com/xiaoxiaodong01"), "Chinese README should include author contact");
 assert.ok(

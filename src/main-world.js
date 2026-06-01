@@ -69,6 +69,18 @@
     }
   }
 
+  const reactFiberCache = {
+    editorEl: null,
+    stateNode: null,
+    onFilesAdded: null
+  };
+
+  function clearReactFiberCache() {
+    reactFiberCache.editorEl = null;
+    reactFiberCache.stateNode = null;
+    reactFiberCache.onFilesAdded = null;
+  }
+
   function findEditorElement() {
     for (const element of document.querySelectorAll(EDITOR_SELECTOR)) {
       const rect = element.getBoundingClientRect();
@@ -79,7 +91,18 @@
 
   function findDraftStateNode() {
     const editor = findEditorElement();
-    if (!editor) return null;
+    if (!editor) {
+      clearReactFiberCache();
+      return null;
+    }
+    if (reactFiberCache.editorEl === editor && reactFiberCache.stateNode) {
+      return reactFiberCache.stateNode;
+    }
+
+    if (reactFiberCache.editorEl !== editor) {
+      clearReactFiberCache();
+    }
+
     const fiberKey = Object.keys(editor).find(
       (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$")
     );
@@ -88,6 +111,8 @@
     for (let depth = 0; depth < 80 && fiber; depth += 1) {
       const stateNode = fiber.stateNode;
       if (stateNode?.props?.editorState && typeof stateNode.props.onChange === "function") {
+        reactFiberCache.editorEl = editor;
+        reactFiberCache.stateNode = stateNode;
         return stateNode;
       }
       fiber = fiber.return;
@@ -97,7 +122,18 @@
 
   function findOnFilesAdded() {
     const editor = findEditorElement();
-    if (!editor) return null;
+    if (!editor) {
+      clearReactFiberCache();
+      return null;
+    }
+    if (reactFiberCache.editorEl === editor && reactFiberCache.onFilesAdded) {
+      return reactFiberCache.onFilesAdded;
+    }
+
+    if (reactFiberCache.editorEl !== editor) {
+      clearReactFiberCache();
+    }
+
     const fiberKey = Object.keys(editor).find(
       (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$")
     );
@@ -105,9 +141,17 @@
     let fiber = editor[fiberKey];
     for (let depth = 0; depth < 160 && fiber; depth += 1) {
       const props = fiber.memoizedProps || fiber.stateNode?.props;
-      if (typeof props?.onFilesAdded === "function") return props.onFilesAdded;
+      if (typeof props?.onFilesAdded === "function") {
+        reactFiberCache.editorEl = editor;
+        reactFiberCache.onFilesAdded = props.onFilesAdded;
+        return props.onFilesAdded;
+      }
       const nested = findOnFilesAddedInFiberChildren(fiber.child, 0);
-      if (nested) return nested;
+      if (nested) {
+        reactFiberCache.editorEl = editor;
+        reactFiberCache.onFilesAdded = nested;
+        return nested;
+      }
       fiber = fiber.return;
     }
     return null;

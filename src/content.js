@@ -1549,16 +1549,82 @@
     return /fetch failed|timed out|timeout|network|HTTP 429|HTTP 500|HTTP 502|HTTP 503|HTTP 504/i.test(String(error || ""));
   }
 
+  function compressImageIfNeeded(base64, mime, maxBytes = 1.5 * 1024 * 1024) {
+    const rawLength = base64.length;
+    const approximateBytes = Math.ceil(rawLength * 0.75);
+    if (approximateBytes <= maxBytes) {
+      return Promise.resolve({ base64, mime, bytes: approximateBytes, compressed: false });
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          const MAX_DIM = 2048;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const targetMime = mime === "image/png" || mime === "image/jpeg" || mime === "image/webp" ? mime : "image/jpeg";
+          const dataUrl = canvas.toDataURL(targetMime, 0.82);
+          const commaIndex = dataUrl.indexOf(",");
+          if (commaIndex >= 0) {
+            const nextBase64 = dataUrl.slice(commaIndex + 1);
+            const nextBytes = Math.ceil(nextBase64.length * 0.75);
+            if (nextBytes < approximateBytes) {
+              resolve({ base64: nextBase64, mime: targetMime, bytes: nextBytes, compressed: true });
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Image compression failed, using original", e);
+        }
+        resolve({ base64, mime, bytes: approximateBytes, compressed: false });
+      };
+      img.onerror = () => {
+        resolve({ base64, mime, bytes: approximateBytes, compressed: false });
+      };
+      img.src = `data:${mime};base64,${base64}`;
+    });
+  }
+
   async function loadImage(source, fallbackName) {
     throwIfImportCancelled();
     if (source.startsWith("data:")) {
       const parsed = shared.parseDataUri(source);
-      return parsed.ok
-        ? { ok: true, ...parsed, fileName: `${fallbackName}.png`, source }
-        : { ok: false, error: parsed.error, source };
+      if (!parsed.ok) {
+        return { ok: false, error: parsed.error, source };
+      }
+      const compressed = await compressImageIfNeeded(parsed.base64, parsed.mime);
+      return {
+        ok: true,
+        base64: compressed.base64,
+        mime: compressed.mime,
+        fileName: `${fallbackName}.png`,
+        bytes: compressed.bytes,
+        source
+      };
     }
     if (shared.isLocalImageSource(source)) {
-      return shared.resolveLocalImage(source);
+      const resolved = await shared.resolveLocalImage(source);
+      if (!resolved.ok) return resolved;
+      const compressed = await compressImageIfNeeded(resolved.base64, resolved.mime);
+      return { ok: true, ...resolved, ...compressed };
     }
     if (!shared.isRemoteHttpImageSource(source)) {
       return {
@@ -1579,12 +1645,13 @@
           origin: result?.origin || imageOrigin(source)
         };
       }
+      const compressed = await compressImageIfNeeded(result.base64, result.mime);
       return {
         ok: true,
-        base64: result.base64,
-        mime: result.mime,
-        fileName: normalizeImageFileName(result.fileName || shared.guessFileName(source, fallbackName), fallbackName, result.mime),
-        bytes: result.bytes,
+        base64: compressed.base64,
+        mime: compressed.mime,
+        fileName: normalizeImageFileName(result.fileName || shared.guessFileName(source, fallbackName), fallbackName, compressed.mime),
+        bytes: compressed.bytes,
         source
       };
     } catch (error) {

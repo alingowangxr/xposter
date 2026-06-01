@@ -471,7 +471,19 @@ function arrayBufferToBase64(buffer) {
 }
 
 function guessMime(url) {
-  const ext = String(url).split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+  let ext = "";
+  try {
+    const parsed = new URL(url);
+    const fmt = parsed.searchParams.get("wx_fmt") || parsed.searchParams.get("fmt") || parsed.searchParams.get("format");
+    if (fmt) {
+      ext = fmt.toLowerCase();
+    } else {
+      ext = parsed.pathname.split(".").pop()?.toLowerCase();
+    }
+  } catch {
+    ext = String(url).split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+  }
+
   return (
     {
       png: "image/png",
@@ -490,7 +502,13 @@ function guessFileName(url) {
   try {
     const parsed = new URL(url);
     const name = parsed.pathname.split("/").filter(Boolean).pop();
-    return name && /\.[a-z0-9]{2,5}$/i.test(name) ? name : `image-${Date.now()}.png`;
+    if (name && /\.[a-z0-9]{2,5}$/i.test(name)) {
+      return name;
+    }
+    const fmt = parsed.searchParams.get("wx_fmt") || parsed.searchParams.get("fmt") || parsed.searchParams.get("format");
+    const ext = fmt ? fmt.toLowerCase() : "png";
+    const cleanExt = ["jpeg", "jpg", "png", "gif", "webp", "bmp", "avif"].includes(ext) ? ext : "png";
+    return `image-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Date.now()}.${cleanExt}`;
   } catch {
     return `image-${Date.now()}.png`;
   }
